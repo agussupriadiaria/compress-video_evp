@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Upload & Compress Video</title>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; }
+    video { margin: 10px 0; display: block; max-width: 100%; }
+    hr { margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <h2>Upload Video</h2>
+  <input type="file" id="fileInput" accept="video/*" />
+  <div id="output"></div>
+
+  <script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: true });
+
+    document.getElementById('fileInput').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      const outputDiv = document.getElementById('output');
+      outputDiv.innerHTML = '';
+
+      if (!file) return;
+
+      const fileSizeMB = file.size / (1024 * 1024);
+      const maxUploadSizeMB = 50;
+
+      if (fileSizeMB > maxUploadSizeMB) {
+        outputDiv.innerHTML = `<p style="color:red;">❌ Ukuran video terlalu besar (maksimal ${maxUploadSizeMB} MB)</p>`;
+        return;
+      }
+
+      outputDiv.innerHTML += `<p>🎬 File terpilih: ${file.name} - ${fileSizeMB.toFixed(2)} MB</p>`;
+
+      if (fileSizeMB <= 10) {
+        // Tanpa kompresi
+        const url = URL.createObjectURL(file);
+        outputDiv.innerHTML += `
+          <p>✅ Video tidak perlu dikompres (≤ 10 MB)</p>
+          <video src="${url}" controls></video><hr>`;
+      } else {
+        // Kompresi video
+        try {
+          outputDiv.innerHTML += `<p>⏳ Memuat FFmpeg...</p>`;
+          if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+          const inputFile = file.name;
+          const outputFile = 'compressed.mp4';
+
+          outputDiv.innerHTML += `<p>📥 Menulis video ke memori...</p>`;
+          ffmpeg.FS('writeFile', inputFile, await fetchFile(file));
+
+          outputDiv.innerHTML += `<p>⚙️ Mengompresi video...</p>`;
+          await ffmpeg.run('-i', inputFile, '-vcodec', 'libx264', '-crf', '28', outputFile);
+
+          const data = ffmpeg.FS('readFile', outputFile);
+          const compressedBlob = new Blob([data.buffer], { type: 'video/mp4' });
+          const url = URL.createObjectURL(compressedBlob);
+
+          outputDiv.innerHTML += `
+            <p>✅ Video dikompres: ${outputFile} - ${(compressedBlob.size / 1024 / 1024).toFixed(2)} MB</p>
+            <video src="${url}" controls></video><hr>`;
+
+          ffmpeg.FS('unlink', inputFile);
+          ffmpeg.FS('unlink', outputFile);
+        } catch (err) {
+          outputDiv.innerHTML += `<p style="color:red;">❌ Gagal kompres video: ${err.message}</p>`;
+          console.error(err);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
